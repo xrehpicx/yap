@@ -40,12 +40,12 @@ npm install -g github:xrehpicx/yap
 yap start
 ```
 
-Installing compiles the native app, which takes a few minutes the first time. The first start downloads the speech model (about 450 MB), and macOS asks for two permissions:
+The first `yap start` compiles the app, which takes a few minutes. It then downloads the speech model (about 450 MB), and macOS asks for two permissions:
 
 - **Microphone**, to hear you.
 - **Accessibility**, to notice the hotkey and paste into the app you are using.
 
-`yap doctor` checks the whole setup and tells you what to fix. `yap install` starts Yap at login. To update, run the install command again.
+`yap doctor` checks the whole setup and tells you what to fix. `yap install` starts Yap at login. To update, run the install command again; the next `yap` command rebuilds the app.
 
 ## Use
 

@@ -4,15 +4,18 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir, userInfo } from 'node:os'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { sourceHash } from '../scripts/source-hash.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
-const app = path.join(root, 'dist', 'Yap.app')
+const support = path.join(homedir(), 'Library', 'Application Support', 'yap')
+const app = path.join(support, 'Yap.app')
 const helper = path.join(app, 'Contents', 'MacOS', 'yap-helper')
+const buildInfoPath = path.join(support, 'build.json')
 
 const BUNDLE_ID = 'com.yap-dictate.helper'
 const configPath = path.join(homedir(), '.config', 'yap', 'config.json')
-const statePath = path.join(homedir(), 'Library', 'Application Support', 'yap', 'state.json')
-const historyPath = path.join(homedir(), 'Library', 'Application Support', 'yap', 'history.jsonl')
+const statePath = path.join(support, 'state.json')
+const historyPath = path.join(support, 'history.jsonl')
 const logPath = path.join(homedir(), 'Library', 'Logs', 'yap', 'yap.log')
 const agentPath = path.join(homedir(), 'Library', 'LaunchAgents', `${BUNDLE_ID}.plist`)
 
@@ -70,9 +73,25 @@ function die(message) {
   process.exit(1)
 }
 
+function isCurrent() {
+  return existsSync(helper) && readJSON(buildInfoPath, {}).source === sourceHash()
+}
+
+/**
+ * Makes sure Yap.app is built from the installed source: on first use, and again after an
+ * update. Returns true when it had to build.
+ */
 function requireHelper() {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') die('only macOS on Apple Silicon is supported.')
-  if (!existsSync(helper)) die(`the native helper is not built. Run \`npm run build\` in ${root}`)
+  if (isCurrent()) return false
+  console.error(
+    existsSync(helper)
+      ? 'yap: Yap was updated; rebuilding the app…'
+      : 'yap: building the Yap app. This takes a few minutes the first time.',
+  )
+  const build = spawnSync(process.execPath, [path.join(root, 'scripts', 'build-native.mjs')], { stdio: 'inherit' })
+  if (build.error || build.status !== 0) die('the build failed. The output above says why.')
+  return true
 }
 
 function readJSON(file, fallback) {
@@ -125,10 +144,13 @@ async function waitFor(condition, timeoutMs) {
 // ---------------------------------------------------------------- daemon
 
 async function start() {
-  requireHelper()
+  const rebuilt = requireHelper()
   if (daemonPids().length > 0) {
-    console.log('Yap is already running.')
-    return printStatus()
+    if (!rebuilt) {
+      console.log('Yap is already running.')
+      return printStatus()
+    }
+    await stop({ quiet: true })
   }
   rmSync(statePath, { force: true })
   // `open` launches through LaunchServices, so macOS attributes the Microphone and
@@ -409,8 +431,9 @@ function doctor() {
 
   check(process.platform === 'darwin' && process.arch === 'arm64', 'macOS on Apple Silicon')
   const built = existsSync(helper)
-  check(built, 'Native helper is built', `Run \`npm run build\` in ${root}`)
+  check(built, 'The Yap app is built', 'Run `yap start`, which builds it (a few minutes the first time)')
   if (!built) return process.exit(1)
+  check(isCurrent(), 'The Yap app matches the installed version', 'Run `yap restart` to rebuild it')
 
   const signature = spawnSync('codesign', ['-dvv', app], { encoding: 'utf8' }).stderr ?? ''
   const authority = signature.match(/^Authority=(.+)$/m)?.[1]

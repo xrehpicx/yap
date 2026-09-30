@@ -22,10 +22,12 @@ jobs:
         run: swift test --package-path native
 
       - name: Build Yap.app
-        run: npm run build
+        run: npm run build:app
 
       - name: Verify the bundle
         run: |
-          codesign --verify --strict dist/Yap.app
-          dist/Yap.app/Contents/MacOS/yap-helper models
-          dist/Yap.app/Contents/MacOS/yap-helper check-hotkey fn
+          APP="$HOME/Library/Application Support/yap/Yap.app"
+          codesign --verify --strict "$APP"
+          "$APP/Contents/MacOS/yap-helper" models
+          "$APP/Contents/MacOS/yap-helper" check-hotkey fn
+          node bin/yap.js doctor || true

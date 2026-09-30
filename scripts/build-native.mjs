@@ -1,26 +1,33 @@
 #!/usr/bin/env node
-// Builds the Swift helper and wraps it in dist/Yap.app.
+// Builds the Swift helper and wraps it in ~/Library/Application Support/yap/Yap.app.
+// `yap` runs this on first use and after updates; `npm run build:app` runs it by hand.
 //
 // The helper has to be a signed app bundle: macOS ties the Microphone and Accessibility
 // grants to the bundle's code signature, and the microphone prompt needs an Info.plist.
+// It lives outside the npm package so its path, and the login item pointing at it, survive
+// reinstalls, and so building never needs write access to a global node_modules.
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
+import { sourceHash } from './source-hash.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const native = path.join(root, 'native')
-const dist = path.join(root, 'dist')
-const target = path.join(dist, 'Yap.app')
-// Assemble and sign in a staging folder, then swap it into place, so anything reading
-// dist/Yap.app (npm packing it, a running copy of Yap) always sees a complete build.
-const staging = path.join(dist, `.staging-${process.pid}`)
+const support = process.env.YAP_APP_DIR ?? path.join(homedir(), 'Library', 'Application Support', 'yap')
+const target = path.join(support, 'Yap.app')
+// Swift's build folder is big; keep it in Caches, where it also speeds up rebuilds after updates.
+const scratch = path.join(homedir(), 'Library', 'Caches', 'yap', 'build')
+// Assemble and sign in a staging folder, then swap it into place, so a running copy of Yap
+// never sees a half-written bundle.
+const staging = path.join(support, `.staging-${process.pid}`)
 const app = path.join(staging, 'Yap.app')
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 
 const BUNDLE_ID = 'com.yap-dictate.helper'
 
-const buildArgs = ['build', '-c', 'release', '--arch', 'arm64']
+const buildArgs = ['build', '-c', 'release', '--arch', 'arm64', '--scratch-path', scratch]
 const build = spawnSync('swift', buildArgs, { cwd: native, stdio: 'inherit' })
 if (build.error?.code === 'ENOENT') {
   console.error('yap: `swift` was not found. Install the Xcode Command Line Tools: xcode-select --install')
@@ -103,5 +110,6 @@ const previous = path.join(staging, 'previous')
 if (existsSync(target)) renameSync(target, previous)
 renameSync(app, target)
 rmSync(staging, { recursive: true, force: true })
+writeFileSync(path.join(support, 'build.json'), JSON.stringify({ source: sourceHash(), version }, null, 2) + '\n')
 
-console.log(`Built ${path.relative(root, target)} (signed: ${identity === '-' ? 'ad-hoc' : identity})`)
+console.log(`Built ${target.replace(homedir(), '~')} (signed: ${identity === '-' ? 'ad-hoc' : identity})`)

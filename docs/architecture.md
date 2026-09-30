@@ -5,6 +5,8 @@ Yap has two parts:
 - **`bin/yap.js`**, a Node CLI with no dependencies. It starts and stops the app, edits the config, and runs one-off commands such as `yap transcribe`.
 - **`Yap.app`**, a Swift menu bar app built from [`native/`](../native). It does the dictation.
 
+npm installs only the source. The first `yap` command that needs the app builds it into `~/Library/Application Support/yap/Yap.app`, and rebuilds it when the installed source changes. The app has a fixed home, so its login item and permissions survive updates.
+
 The CLI launches the app with `open`, so macOS treats Yap as its own app. Microphone and Accessibility permissions belong to Yap, not to your terminal.
 
 ## One dictation
@@ -44,8 +46,8 @@ sequenceDiagram
 | Path | What it is |
 | --- | --- |
 | `bin/yap.js` | The CLI |
-| `scripts/build-native.mjs` | Builds the Swift package, wraps it in `dist/Yap.app`, and signs it |
-| `scripts/prepare.mjs` | Builds the app when installing from GitHub or a checkout, unless it is already built |
+| `scripts/build-native.mjs` | Builds the Swift package, wraps it in `Yap.app`, and signs it |
+| `scripts/source-hash.mjs` | Fingerprints the native source, so `yap` knows when to rebuild |
 | `scripts/make-icon.swift` | Draws the app icon |
 | `native/Sources/yap-helper/App.swift` | Dictation state machine, menu bar menu |
 | `native/Sources/yap-helper/Hotkey.swift` | Hotkey parsing and the event tap |
@@ -60,6 +62,8 @@ sequenceDiagram
 
 | Path | Contents |
 | --- | --- |
+| `~/Library/Application Support/yap/Yap.app` | The app, built on first use and after updates |
+| `~/Library/Caches/yap/build` | Swift's build folder, kept to speed up rebuilds |
 | `~/.config/yap/config.json` | Settings |
 | `~/Library/Application Support/yap/history.jsonl` | Dictation history |
 | `~/Library/Application Support/yap/state.json` | Live status, read by `yap status` |

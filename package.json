@@ -31,7 +31,6 @@
   "files": [
     "NOTICE",
     "bin",
-    "dist",
     "scripts",
     "native/Package.swift",
     "native/Package.resolved",
@@ -39,8 +38,7 @@
     "native/Resources"
   ],
   "scripts": {
-    "build": "node scripts/build-native.mjs",
-    "prepare": "node scripts/prepare.mjs",
+    "build:app": "node scripts/build-native.mjs",
     "test": "cd native && swift test"
   },
   "os": [

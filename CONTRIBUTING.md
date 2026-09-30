@@ -9,25 +9,25 @@ You need macOS 14 or later on Apple Silicon, Node.js 20.11 or later, and the Xco
 ```sh
 git clone https://github.com/xrehpicx/yap.git
 cd yap
-npm install        # builds dist/Yap.app
-node bin/yap.js start
+node bin/yap.js start   # builds the app the first time
 ```
 
-After changing anything in `native/`, rebuild and restart:
+The app is built into `~/Library/Application Support/yap/Yap.app`, with Swift's build folder in `~/Library/Caches/yap/build`. `yap` fingerprints the native source and rebuilds whenever it changes, so after editing anything in `native/` just restart:
 
 ```sh
-npm run build
 node bin/yap.js restart
 ```
+
+`npm run build:app` rebuilds by hand.
 
 `node bin/yap.js run` runs the app in the foreground with its log on your terminal. Permissions then belong to your terminal rather than to Yap, so you may be asked for them again.
 
 ## Signing
 
-macOS ties the Microphone and Accessibility grants to the app's code signature. `npm run build` signs with the first **Developer ID Application** or **Apple Development** identity in your keychain, which keeps the grants across rebuilds. With neither, it falls back to an ad-hoc signature, and macOS asks again after every build. To choose an identity:
+macOS ties the Microphone and Accessibility grants to the app's code signature. The build signs with the first **Developer ID Application** or **Apple Development** identity in your keychain, which keeps the grants across rebuilds. With neither, it falls back to an ad-hoc signature, and macOS asks again after every build. To choose an identity:
 
 ```sh
-YAP_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" npm run build
+YAP_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" npm run build:app
 ```
 
 ## Tests
