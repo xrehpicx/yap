@@ -96,6 +96,34 @@ final class VocabularyTests: XCTestCase {
         XCTAssertEqual(Vocabulary.snap("nothing to change", to: ["RE-727"]), "nothing to change")
     }
 
+    func testSoundKeys() {
+        XCTAssertEqual(Vocabulary.soundKey("yeah") + Vocabulary.soundKey("plugs"), Array("YPLKS".utf8))
+        XCTAssertEqual(Vocabulary.soundKey("Vercel"), Vocabulary.soundKey("Versal"))
+        XCTAssertEqual(Vocabulary.soundKey("changelog"), Array("XNJLK".utf8))
+    }
+
+    func testSoundAlikePhrasesFromScreen() {
+        // Real transcripts, dictated while "yap logs" was on screen.
+        let screen = Vocabulary.phraseIndex(from: ["Then run `yap logs` to see what happened. Open diff"])
+        XCTAssertEqual(Vocabulary.soundAlike("Yeah, plugs.", phrases: screen), "yap logs.")
+        XCTAssertEqual(Vocabulary.soundAlike("Yeah, blogs.", phrases: screen), "yap logs.")
+        XCTAssertEqual(Vocabulary.soundAlike("Check the yap logs.", phrases: screen), "Check the yap logs.")
+        // Only the misheard word changes; the speaker's own words keep their case.
+        XCTAssertEqual(Vocabulary.soundAlike("Run YAP logs and open div.", phrases: screen), "Run YAP logs and open diff.")
+        // An unusual single word, spelled as on screen.
+        XCTAssertEqual(
+            Vocabulary.soundAlike("Deploy it to Versal.", phrases: Vocabulary.phraseIndex(from: ["Vercel dashboard"])),
+            "Deploy it to Vercel.")
+    }
+
+    func testSoundAlikeLeavesOrdinaryWordsAlone() {
+        let screen = Vocabulary.phraseIndex(from: ["the logs are here", "React and Supabase"])
+        // A single ordinary word is never swapped for another.
+        XCTAssertEqual(Vocabulary.soundAlike("Check the locks.", phrases: screen), "Check the locks.")
+        XCTAssertEqual(Vocabulary.soundAlike("We refactor the database.", phrases: screen), "We refactor the database.")
+        XCTAssertEqual(Vocabulary.soundAlike("Yeah, plugs.", phrases: Vocabulary.phraseIndex(from: ["nothing here"])), "Yeah, plugs.")
+    }
+
     func testNearMissCheckIsFast() {
         let terms = (0..<100).map { "Term\($0)Name" }
         let transcript = String(repeating: "we should ship the new release to production tomorrow morning ", count: 10)

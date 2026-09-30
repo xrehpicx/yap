@@ -119,6 +119,168 @@ enum Vocabulary {
         return output + text[cursor...]
     }
 
+    // MARK: - Sound-alike phrases
+
+    /// Phrases on screen keyed by how they sound. Built while the user talks.
+    struct PhraseIndex: Sendable {
+        fileprivate var byKey: [[UInt8]: (phrase: String, count: Int)] = [:]
+        var isEmpty: Bool { byKey.isEmpty }
+        var count: Int { byKey.count }
+    }
+
+    private static let clause = try! NSRegularExpression(pattern: #"[^.!?;:()\[\]{}"`|/\\\n•·]+"#)
+
+    /// Every run of one to three words on screen, within a clause, by sound key.
+    static func phraseIndex(from texts: [String], limit: Int = 30_000) -> PhraseIndex {
+        var index = PhraseIndex()
+        for text in texts {
+            for match in clause.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(match.range, in: text) else { continue }
+                let words = alphanumeric.matches(in: text, range: NSRange(range, in: text)).compactMap {
+                    Range($0.range, in: text).map { String(text[$0]) }
+                }
+                let keys = words.map(soundKey)
+                for start in words.indices {
+                    for length in 1...3 where start + length <= words.count {
+                        let key = joinedSoundKey(keys[start..<(start + length)])
+                        guard key.count >= 4 else { continue }
+                        let phrase = words[start..<(start + length)].joined(separator: " ")
+                        if let existing = index.byKey[key] {
+                            index.byKey[key] = (existing.phrase, existing.count + 1)
+                        } else if index.byKey.count < limit {
+                            index.byKey[key] = (phrase, 1)
+                        }
+                    }
+                }
+            }
+        }
+        return index
+    }
+
+    /// Swaps transcript phrases for on-screen phrases that sound the same but are spelled
+    /// differently: with "yap logs" on screen, "Yeah, plugs" becomes "yap logs". Runs of words
+    /// are matched freely; a single word only when the screen word is unusual ("Versal" →
+    /// Vercel), so an ordinary word is never swapped for another ordinary word. Costs nothing.
+    static func soundAlike(_ text: String, phrases: PhraseIndex) -> String {
+        guard !phrases.isEmpty else { return text }
+        let tokens = alphanumeric.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range, in: text)
+        }
+        let keys = tokens.map { soundKey(String(text[$0])) }
+        var output = ""
+        var cursor = text.startIndex
+        var index = 0
+        while index < tokens.count {
+            var matched = false
+            for length in stride(from: min(3, tokens.count - index), through: 1, by: -1) {
+                let range = tokens[index].lowerBound..<tokens[index + length - 1].upperBound
+                let surface = text[range]
+                // Words may be split by a comma Parakeet added ("Yeah, plugs"), not by a sentence end.
+                guard !surface.contains(where: { ".!?;:".contains($0) }) else { continue }
+                let key = joinedSoundKey(keys[index..<(index + length)])
+                guard key.count >= 4, let entry = phrases.byKey[key] else { continue }
+                let phrase = entry.phrase
+                // Same letters: nothing to fix here, or a spacing fix that `snap` handles.
+                guard normalized(String(surface)) != normalized(phrase), isPlausibleSwap(String(surface), phrase)
+                else { continue }
+                // Replace only the words that differ, keeping the speaker's own words (and
+                // their capitalisation) around them: "open div" → "open diff", not "Open diff".
+                var screenWords = phrase.split(separator: " ").map(String.init)
+                var first = index
+                var last = index + length - 1
+                while first < last, screenWords.count > 1,
+                    text[tokens[first]].lowercased() == screenWords.first!.lowercased()
+                {
+                    screenWords.removeFirst()
+                    first += 1
+                }
+                while last > first, screenWords.count > 1,
+                    text[tokens[last]].lowercased() == screenWords.last!.lowercased()
+                {
+                    screenWords.removeLast()
+                    last -= 1
+                }
+                output += text[cursor..<tokens[first].lowerBound] + screenWords.joined(separator: " ")
+                cursor = tokens[last].upperBound
+                index += length
+                matched = true
+                break
+            }
+            if !matched { index += 1 }
+        }
+        return output + text[cursor...]
+    }
+
+    /// Setting aside words the two share at either end, what differs must be more than one
+    /// ordinary word: "Yeah, plugs" → "yap logs" is a real mishearing, "the locks" → "the logs"
+    /// just trades one ordinary word for another. A lone unusual screen word is fine ("Versal" → Vercel).
+    private static func isPlausibleSwap(_ heard: String, _ phrase: String) -> Bool {
+        var heardWords = heard.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { $0.lowercased() }
+        var screenWords = phrase.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { String($0) }
+        while let first = heardWords.first, first == screenWords.first?.lowercased() {
+            heardWords.removeFirst()
+            screenWords.removeFirst()
+        }
+        while let last = heardWords.last, last == screenWords.last?.lowercased() {
+            heardWords.removeLast()
+            screenWords.removeLast()
+        }
+        if heardWords.count > 1 || screenWords.count > 1 { return true }
+        guard let screenWord = screenWords.first else { return false }
+        return !isEveryday(screenWord) && !screenWord.contains(where: \.isNumber)
+    }
+
+    /// A rough sound key: the consonant skeleton, with voiced and unvoiced pairs merged and
+    /// vowels dropped, so "Yeah, plugs" and "yap logs" are both YPLKS.
+    static func soundKey(_ word: String) -> [UInt8] {
+        let letters = Array(word.lowercased().utf8.filter { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) })
+        var key: [UInt8] = []
+        func push(_ character: Character) {
+            let byte = character.asciiValue!
+            if key.last != byte { key.append(byte) }
+        }
+        var index = 0
+        while index < letters.count {
+            let letter = Character(UnicodeScalar(letters[index]))
+            let next = index + 1 < letters.count ? Character(UnicodeScalar(letters[index + 1])) : nil
+            let soft = next.map { "eiy".contains($0) } ?? false
+            var consumed = 1
+            switch letter {
+            case "0"..."9": push(letter)
+            case "a", "e", "i", "o", "u": if index == 0 { push("A") }
+            case "y": if index == 0 { push("Y") }
+            case "w": if index == 0 { push("W") }
+            case "h": if index == 0 { push("H") }
+            case "c":
+                if next == "h" { push("X"); consumed = 2 } else if next == "k" { push("K"); consumed = 2 }
+                else { push(soft ? "S" : "K") }
+            case "s": if next == "h" { push("X"); consumed = 2 } else { push("S") }
+            case "t": if next == "h" { push("T"); consumed = 2 } else { push("T") }
+            case "p": if next == "h" { push("F"); consumed = 2 } else { push("P") }
+            case "g": if next == "h" { consumed = 2 } else { push(soft ? "J" : "K") }
+            case "b": push("P")
+            case "d": push("T")
+            case "j": push("J")
+            case "k", "q": push("K")
+            case "v", "f": push("F")
+            case "z": push("S")
+            case "x": push("K"); push("S")
+            case "l", "m", "n", "r": push(Character(letter.uppercased()))
+            default: break
+            }
+            index += consumed
+        }
+        return key
+    }
+
+    private static func joinedSoundKey(_ keys: ArraySlice<[UInt8]>) -> [UInt8] {
+        var joined: [UInt8] = []
+        for key in keys {
+            for byte in key where joined.last != byte { joined.append(byte) }
+        }
+        return joined
+    }
+
     // MARK: - Near misses
 
     static func isEveryday(_ word: String) -> Bool {

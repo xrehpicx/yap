@@ -79,7 +79,10 @@ case "transcribe":
             raw = transcript.text
             fixes = transcript.fixes
             text = format ? Formatter.format(raw) : raw
-            if !terms.isEmpty { text = Vocabulary.snap(text, to: terms) }
+            if !terms.isEmpty {
+                text = Vocabulary.snap(text, to: terms)
+                text = Vocabulary.soundAlike(text, phrases: Vocabulary.phraseIndex(from: terms))
+            }
             timings.append((Date().timeIntervalSince(started) * 10_000).rounded() / 10)
         }
         printJSON([

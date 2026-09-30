@@ -86,6 +86,8 @@ Parakeet has never heard of your teammates or your stack. When you start talking
 | shadcn | "a PR in the Shaden repo" | a PR in the shadcn repo |
 | FluidAudio | "whether Fluid Audio runs" | whether FluidAudio runs |
 
+Phrases on screen are also matched by sound: with `yap logs` visible, "Yeah, plugs" becomes yap logs, and "open div" becomes open diff. A single ordinary word is never swapped for another, so "the locks" stays "the locks" even with "the logs" on screen.
+
 Identifiers are matched by their letters and digits: with `RE-727` or `python3` on screen, saying "re seven two seven" or "python three" gives exactly `RE-727` or `python3`, instantly.
 
 Everyday words are only replaced when the audio strongly suggests it: "refactor" stays "refactor" even with React on screen, while "change lock" becomes changelog. Reading the screen happens while you talk, so dictations with nothing to correct are exactly as fast as before; a dictation that does get a correction takes about 150 ms longer. The screen text stays in memory and is never stored or logged.

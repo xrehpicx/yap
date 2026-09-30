@@ -161,7 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             let texts = readScreen ? ScreenContext.visibleText() : []
             let readMs = Self.milliseconds(since: started)
             var vocabulary = ScreenVocabulary(
-                terms: Vocabulary.terms(in: texts, always: always), identifiers: Vocabulary.identifiers(in: texts))
+                terms: Vocabulary.terms(in: texts, always: always), identifiers: Vocabulary.identifiers(in: texts),
+                phrases: Vocabulary.phraseIndex(from: texts + always))
             if await transcriber.supportsVocabulary {
                 vocabulary.plan = await transcriber.prepareVocabulary(vocabulary.terms)
             }
@@ -172,7 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                 self.screenVocabulary = ready
                 let characters = texts.reduce(0) { $0 + $1.count }
                 Log.info(
-                    "vocabulary: \(ready.terms.count) terms, \(ready.identifiers.count) identifiers from "
+                    "vocabulary: \(ready.terms.count) terms, \(ready.identifiers.count) identifiers, "
+                        + "\(ready.phrases.count) phrases from "
                         + "\(characters) characters (screen read in \(readMs) ms, ready in \(totalMs) ms)")
                 if debug {
                     Log.info("vocabulary terms: \(ready.terms.joined(separator: ", "))")
@@ -372,6 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                     var text = self.config.format ? Formatter.format(raw) : raw
                     if let screen {
                         text = Vocabulary.snap(text, to: screen.identifiers + screen.terms)
+                        text = Vocabulary.soundAlike(text, phrases: screen.phrases)
                     }
                     let elapsed = Self.milliseconds(since: started)
                     if transcript.checkedVocabulary {
@@ -651,5 +654,7 @@ private struct ScreenVocabulary: Sendable {
     var terms: [String]
     /// Keys such as RE-727, matched by their letters and digits.
     var identifiers: [String]
+    /// Every short phrase on screen by sound, so "Yeah, plugs" can become "yap logs".
+    var phrases: Vocabulary.PhraseIndex
     var plan: VocabularyPlan?
 }
