@@ -116,6 +116,20 @@ final class FormatterTests: XCTestCase {
                       "One of the tests failed. We shipped version 2. It works.")
     }
 
+    func testNumbersReadOutInPieces() {
+        // Real transcripts.
+        assertFormats("Re seven two seven of Re Seven Two Nine.", "Re 727 of Re 729.")
+        assertFormats("I don't think the context window is one twenty eight k.", "I don't think the context window is 128k.")
+        assertFormats("It returns a four oh four", "It returns a 404")
+        assertFormats("Back in twenty twenty six", "Back in 2026")
+    }
+
+    func testSingleNumberWordsStayWords() {
+        assertFormats("Oh, one or two things.", "Oh, one or two things.")
+        assertFormats("One of the tests failed.", "One of the tests failed.")
+        assertFormats("I have seven apples and twenty eight pears.", "I have seven apples and twenty eight pears.")
+    }
+
     func testIsFastEnoughToIgnore() {
         let text = String(repeating: "Um, so the the plan is, uh, simple. First, we build. Second, we ship. ", count: 4)
         let started = Date()

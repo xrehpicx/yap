@@ -33,6 +33,7 @@ const DEFAULTS = {
   sendApps: [],
   screenContext: true,
   vocabulary: [],
+  debug: false,
   replacements: {},
 }
 const CHOICES = {

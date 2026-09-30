@@ -6,8 +6,8 @@ First release.
 
 - Hold-to-talk dictation with NVIDIA Parakeet on the Neural Engine, about 50 ms from release to text.
 - Pastes into the focused text field, or copies when nothing editable has focus.
-- Formatting: filler words, stutters, spoken and natural lists, "new line", "new paragraph", "scratch that", spoken punctuation.
-- Screen context: names and jargon visible on screen are checked against the audio and spelled right, with no added delay unless a correction is made.
+- Formatting: filler words, stutters, spoken and natural lists, numbers said in pieces ("seven two seven" → 727), "new line", "new paragraph", "scratch that", spoken punctuation.
+- Screen context: names and jargon visible on screen are checked against the audio and spelled right, with no added delay unless a correction is made. Identifiers such as RE-727 or python3 are matched exactly.
 - Hands-free mode (hold fn, tap Space) with a stop button.
 - Auto-send: press Return after pasting, per app or everywhere.
 - Menu bar app with status, recent dictations, and quick settings.

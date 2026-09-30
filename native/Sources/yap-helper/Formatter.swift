@@ -12,6 +12,7 @@ enum Formatter {
         text = lineBreaks(text)
         text = fillers.stringByReplacingMatches(in: text, range: text.fullRange, withTemplate: "")
         text = stutters.stringByReplacingMatches(in: text, range: text.fullRange, withTemplate: "$1")
+        text = spokenNumbers(text)
         text = list(text)
         text = spokenSeries(text)
         return tidy(text)
@@ -74,6 +75,89 @@ enum Formatter {
 
     private static let stutters = regex(
         #"\b(i|the|a|an|to|and|but|so|we|it|in|of|for|on|my|you|they|this|with|at|if|or|i'm|it's)(?:\s+\1)+\b"#)
+
+    // MARK: - Numbers
+
+    private static let digitWords = [
+        "zero": 0, "oh": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+        "eight": 8, "nine": 9,
+    ]
+    private static let teenWords = [
+        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+        "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    ]
+    private static let tensWords = [
+        "twenty": 2, "thirty": 3, "forty": 4, "fifty": 5, "sixty": 6, "seventy": 7, "eighty": 8, "ninety": 9,
+    ]
+    private static let numberWord = regex(
+        #"\b(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b"#)
+
+    /// Numbers read out in pieces become digits: "seven two seven" → 727, "four oh four" → 404,
+    /// "one twenty eight k" → 128k, "twenty twenty six" → 2026. Parakeet already writes ordinary
+    /// numbers as digits; a single number word ("one of them") is left alone.
+    private static func spokenNumbers(_ input: String) -> String {
+        let matches = numberWord.matches(in: input, range: input.fullRange).compactMap { Range($0.range, in: input) }
+        guard matches.count >= 2 else { return input }
+
+        // Group number words separated only by a single space or hyphen.
+        var runs: [[Range<String.Index>]] = []
+        for range in matches {
+            if let last = runs.last?.last, input[last.upperBound..<range.lowerBound] == " "
+                || input[last.upperBound..<range.lowerBound] == "-"
+            {
+                runs[runs.count - 1].append(range)
+            } else {
+                runs.append([range])
+            }
+        }
+
+        var text = input
+        for run in runs.reversed() {
+            var words = run.map { input[$0].lowercased() }
+            var ranges = run
+            // A leading "oh" is an interjection, not a zero.
+            while words.first == "oh" {
+                words.removeFirst()
+                ranges.removeFirst()
+            }
+            guard let digits = digitString(words), let first = ranges.first, let last = ranges.last else { continue }
+            var end = last.upperBound
+            var replacement = digits
+            // "one twenty eight k" → 128k
+            if text[end...].hasPrefix(" k"), text[text.index(end, offsetBy: 2)...].first.map({ !$0.isLetter }) ?? true {
+                replacement += "k"
+                end = text.index(end, offsetBy: 2)
+            }
+            text.replaceSubrange(first.lowerBound..<end, with: replacement)
+        }
+        return text
+    }
+
+    /// Reads number words as a sequence of digit groups. Needs at least two groups, so a lone
+    /// "seven" or "twenty eight" stays as written.
+    private static func digitString(_ words: [String]) -> String? {
+        var groups: [String] = []
+        var index = 0
+        while index < words.count {
+            let word = words[index]
+            if let digit = digitWords[word] {
+                groups.append(String(digit))
+            } else if let teen = teenWords[word] {
+                groups.append(String(teen))
+            } else if let tens = tensWords[word] {
+                if index + 1 < words.count, let unit = digitWords[words[index + 1]], unit > 0, words[index + 1] != "oh" {
+                    groups.append("\(tens)\(unit)")
+                    index += 1
+                } else {
+                    groups.append("\(tens)0")
+                }
+            } else {
+                return nil
+            }
+            index += 1
+        }
+        return groups.count >= 2 ? groups.joined() : nil
+    }
 
     // MARK: - Lists
 

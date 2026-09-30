@@ -63,6 +63,8 @@ struct Config: Codable {
     var screenContext = true
     /// Words to always listen for, in addition to those on screen.
     var vocabulary: [String] = []
+    /// Log extra detail, including the words picked from the screen. Off by default.
+    var debug = false
     var replacements: [String: String] = [:]
 
     init() {}
@@ -83,6 +85,7 @@ struct Config: Codable {
         sendApps = try c.decodeIfPresent([String].self, forKey: .sendApps) ?? sendApps
         screenContext = try c.decodeIfPresent(Bool.self, forKey: .screenContext) ?? screenContext
         vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? vocabulary
+        debug = try c.decodeIfPresent(Bool.self, forKey: .debug) ?? debug
         replacements = try c.decodeIfPresent([String: String].self, forKey: .replacements) ?? replacements
     }
 

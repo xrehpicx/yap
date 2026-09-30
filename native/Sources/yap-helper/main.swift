@@ -65,7 +65,8 @@ case "transcribe":
         if !terms.isEmpty {
             try await transcriber.loadVocabularySupport()
             let started = Date()
-            plan = await transcriber.prepareVocabulary(terms)
+            // Identifiers such as RE-727 are matched by text only, as in the app.
+            plan = await transcriber.prepareVocabulary(terms.filter { !$0.contains(where: \.isNumber) })
             vocabularyMs = (Date().timeIntervalSince(started) * 10_000).rounded() / 10
         }
         var raw = ""
@@ -78,6 +79,7 @@ case "transcribe":
             raw = transcript.text
             fixes = transcript.fixes
             text = format ? Formatter.format(raw) : raw
+            if !terms.isEmpty { text = Vocabulary.snap(text, to: terms) }
             timings.append((Date().timeIntervalSince(started) * 10_000).rounded() / 10)
         }
         printJSON([

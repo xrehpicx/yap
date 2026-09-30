@@ -56,16 +56,77 @@ enum Vocabulary {
         return !everyday
     }
 
+    // MARK: - Identifiers
+
+    /// Ticket and issue keys such as RE-727, ENG-4521 or PR42.
+    private static let identifier = try! NSRegularExpression(pattern: #"\b[A-Za-z]{2,10}[-_]?[0-9]{1,7}\b"#)
+    /// Runs of letters or digits: "Re", "727".
+    private static let alphanumeric = try! NSRegularExpression(pattern: #"[A-Za-z0-9]+"#)
+
+    /// Identifiers on screen, most frequent first. Spoken as "re seven two seven", they are
+    /// matched by their letters and digits rather than by sound.
+    static func identifiers(in texts: [String]) -> [String] {
+        var counts: [String: Int] = [:]
+        for text in texts {
+            for match in identifier.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(match.range, in: text) else { continue }
+                counts[String(text[range]), default: 0] += 1
+            }
+        }
+        return counts.keys.sorted { counts[$0]! > counts[$1]! }.prefix(200).map { $0 }
+    }
+
+    /// Replaces words whose letters and digits exactly match a screen term but are written
+    /// differently: "Re 727" → RE-727, "Fluid Audio" → FluidAudio. Identifiers are matched
+    /// regardless of case; plain words only when the spacing differs, never for case alone.
+    /// Needs no audio check, so it costs nothing.
+    static func snap(_ text: String, to terms: [String]) -> String {
+        var targets: [[UInt8]: String] = [:]
+        for term in terms {
+            let key = normalized(term)
+            if key.count >= 3, targets[key] == nil { targets[key] = term }
+        }
+        guard !targets.isEmpty else { return text }
+
+        let tokens = alphanumeric.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range, in: text)
+        }
+        var output = ""
+        var cursor = text.startIndex
+        var index = 0
+        while index < tokens.count {
+            var matched = false
+            // Prefer the longest span: "Re 727" over "Re".
+            for length in stride(from: min(3, tokens.count - index), through: 1, by: -1) {
+                let span = tokens[index..<(index + length)]
+                // Only words separated by spaces or hyphens belong together.
+                let range = span.first!.lowerBound..<span.last!.upperBound
+                let surface = String(text[range])
+                guard length == 1 || surface.allSatisfy({ $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" })
+                else { continue }
+                guard let term = targets[normalized(surface)], surface != term else { continue }
+                let isIdentifier = term.contains(where: \.isNumber)
+                guard isIdentifier || length > 1 || (surface.lowercased() != term.lowercased() && surface.count != term.count)
+                else { continue }
+                output += text[cursor..<range.lowerBound] + term
+                cursor = range.upperBound
+                index += length
+                matched = true
+                break
+            }
+            if !matched { index += 1 }
+        }
+        return output + text[cursor...]
+    }
+
     // MARK: - Near misses
 
-    /// Everyday English words are taken as heard: "refactor" is never a mishearing of "React".
     static func isEveryday(_ word: String) -> Bool {
         let letters = word.lowercased().filter { $0.isLetter }
         return !letters.isEmpty && english?.contains(letters) == true
     }
 
-    /// Transcript words that look like a vocabulary term but are not written the same way:
-    /// "superbase" for Supabase, "Fluid Audio" for FluidAudio. Case-only differences do not count.
+    /// Transcript words that look like a mishearing of a vocabulary term. See `looksLikeMishearing`.
     static func nearMisses(in text: String, terms: [String]) -> [String] {
         let words = Array(text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).prefix(300))
         let targets: [(term: String, key: [UInt8], letters: [Int], words: Int)] = terms.compactMap { term in
@@ -75,59 +136,85 @@ enum Vocabulary {
         }
         guard !words.isEmpty, !targets.isEmpty else { return [] }
 
-        // Every run of one to three words, with its letters run together.
-        var spans: [(key: [UInt8], letters: [Int], words: Int, text: String)] = []
+        // Every run of one to four words, with its letters run together.
+        let wordKeys = words.map(normalized)
+        let wordEveryday = words.map(isEveryday)
+        var spans: [Span] = []
         for start in words.indices {
-            for length in 1...3 where start + length <= words.count {
-                let span = words[start..<(start + length)]
-                let key = normalized(span.joined())
-                spans.append((key, letterCounts(key), length, span.joined(separator: " ")))
+            for length in 1...4 where start + length <= words.count {
+                let range = start..<(start + length)
+                let key = Array(wordKeys[range].joined())
+                spans.append(
+                    Span(
+                        key: key, letters: letterCounts(key), wordKeys: Array(wordKeys[range]),
+                        everyday: length == 1 && wordEveryday[start],
+                        text: words[range].joined(separator: " ")))
             }
         }
 
         var found: [String] = []
         var scratch = DistanceScratch()
-        for target in targets where !found.contains(target.term) {
-            for span in spans {
-                if span.words == target.words + 1 {
-                    // A one-word term split in two ("Fluid Audio"): only the exact letters count.
-                    if span.key == target.key {
-                        found.append(target.term)
-                        break
-                    }
-                } else if span.words <= target.words {
-                    if span.key == target.key {
-                        // Same letters; a near miss only if the spacing differs.
-                        if span.text.lowercased() != target.term.lowercased() {
-                            found.append(target.term)
-                            break
-                        }
-                    } else if acceptsFuzzy(span.text), couldBeSimilar(span.letters, target.letters, longest: max(span.key.count, target.key.count)),
-                        similarity(span.key, target.key, scratch: &scratch) >= 0.6
-                    {
-                        found.append(target.term)
-                        break
-                    }
+        for target in targets {
+            for span in spans where span.wordKeys.count <= target.words + 2 {
+                // Exact letters written differently ("RE727", "Fluid Audio") are fixed by `snap`
+                // for free; no need to wait for the audio check.
+                if span.key == target.key { continue }
+                let longest = max(span.key.count, target.key.count)
+                guard couldBeSimilar(span.letters, target.letters, longest: longest) else { continue }
+                if matches(span, term: target.term, termKey: target.key, scratch: &scratch) {
+                    found.append(target.term)
+                    break
                 }
             }
         }
         return found
     }
 
-    /// Whether heard words may be swapped for a similar-sounding term: only when none of them is
-    /// everyday English.
-    private static func acceptsFuzzy(_ heard: String) -> Bool {
-        !heard.split(separator: " ").contains { isEveryday(String($0)) }
+    private struct Span {
+        let key: [UInt8]
+        let letters: [Int]
+        let wordKeys: [[UInt8]]
+        let everyday: Bool
+        let text: String
     }
 
-    /// Whether to accept the audio check's suggestion to replace `heard` with `term`: the same
-    /// letters spaced differently ("Fluid Audio" → FluidAudio), or an unusual word that is close
-    /// to the term ("superbase" → Supabase). Everyday words are never replaced.
+    /// Whether `heard` is plausibly `term` misheard. The more ordinary the heard words, the
+    /// closer they must be:
+    /// - the same letters spaced or joined differently: "Fluid Audio" for FluidAudio;
+    /// - an unusual word, loosely: "superbase" for Supabase, "Shaden" for shadcn;
+    /// - several words run together, closely: "change lock" for changelog, "super base" for Supabase;
+    /// - a single everyday word, only if nearly identical, so "refactor" never becomes React.
+    /// Case-only differences never count.
+    static func looksLikeMishearing(_ heard: String, of term: String) -> Bool {
+        var scratch = DistanceScratch()
+        return looksLikeMishearing(heard, of: term, scratch: &scratch)
+    }
+
+    static func looksLikeMishearing(_ heard: String, of term: String, scratch: inout DistanceScratch) -> Bool {
+        let wordKeys = heard.split(separator: " ").map { normalized(String($0)) }
+        let key = Array(wordKeys.joined())
+        let span = Span(
+            key: key, letters: letterCounts(key), wordKeys: wordKeys,
+            everyday: wordKeys.count == 1 && isEveryday(heard), text: heard)
+        return matches(span, term: term, termKey: normalized(term), scratch: &scratch)
+    }
+
+    private static func matches(_ span: Span, term: String, termKey: [UInt8], scratch: inout DistanceScratch) -> Bool {
+        guard termKey.count >= 4, !span.key.isEmpty else { return false }
+        if span.key == termKey { return span.text.lowercased() != term.lowercased() }
+
+        let score = similarity(span.key, termKey, scratch: &scratch)
+        if span.wordKeys.count > 1 {
+            guard score >= 0.75 else { return false }
+            // The term with a neighbouring word ("a React", "the Supabase") is not a mishearing.
+            return !span.wordKeys.contains { similarity($0, termKey, scratch: &scratch) >= 0.8 }
+        }
+        return score >= (span.everyday ? 0.85 : 0.6)
+    }
+
+    /// Whether to accept the audio check's suggestion to replace `heard` with `term`.
     static func acceptsReplacement(of heard: String, with term: String) -> Bool {
-        let heardKey = normalized(heard)
-        let termKey = normalized(term)
-        if heardKey == termKey { return heard.lowercased() != term.lowercased() }
-        return acceptsFuzzy(heard) && similarity(heardKey, termKey) >= 0.6
+        looksLikeMishearing(heard, of: term)
     }
 
     /// Applies accepted replacements to the transcript, keeping its punctuation.

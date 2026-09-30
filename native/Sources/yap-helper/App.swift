@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private var handsFreeLimitWork: DispatchWorkItem?
     /// Counts takes, so a vocabulary prepared for an old take is not used for a new one.
     private var take = 0
-    private var vocabularyPlan: VocabularyPlan?
+    private var screenVocabulary: ScreenVocabulary?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("yap-helper starting (pid \(state.pid))")
@@ -82,6 +82,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         loadModel()
         requestMicrophone()
         startHotkey()
+        // Browsers and Electron apps build their accessibility tree lazily; wake it when an app
+        // comes to the front, so screen context is ready for the first dictation there.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
+        ) { [weak self] notification in
+            guard self?.config.screenContext == true,
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else { return }
+            DispatchQueue.global(qos: .utility).async { ScreenContext.warmUp(app) }
+        }
         refresh()
     }
 
@@ -141,23 +151,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     /// Reads the screen and prepares its words while the user talks, off the main thread.
     private func prepareVocabulary() {
         take += 1
-        vocabularyPlan = nil
+        screenVocabulary = nil
         guard config.usesVocabulary else { return }
         let thisTake = take
-        let (readScreen, always) = (config.screenContext, config.vocabulary)
+        let (readScreen, always, debug) = (config.screenContext, config.vocabulary, config.debug)
         let transcriber = self.transcriber!
         Task.detached(priority: .userInitiated) {
-            guard await transcriber.supportsVocabulary else { return }
             let started = Date()
             let texts = readScreen ? ScreenContext.visibleText() : []
-            let terms = Vocabulary.terms(in: texts, always: always)
             let readMs = Self.milliseconds(since: started)
-            let plan = await transcriber.prepareVocabulary(terms)
+            var vocabulary = ScreenVocabulary(
+                terms: Vocabulary.terms(in: texts, always: always), identifiers: Vocabulary.identifiers(in: texts))
+            if await transcriber.supportsVocabulary {
+                vocabulary.plan = await transcriber.prepareVocabulary(vocabulary.terms)
+            }
             let totalMs = Self.milliseconds(since: started)
+            let ready = vocabulary
             await MainActor.run {
                 guard self.take == thisTake else { return }
-                self.vocabularyPlan = plan
-                Log.info("vocabulary: \(plan?.terms.count ?? 0) terms (screen read in \(readMs) ms, ready in \(totalMs) ms)")
+                self.screenVocabulary = ready
+                let characters = texts.reduce(0) { $0 + $1.count }
+                Log.info(
+                    "vocabulary: \(ready.terms.count) terms, \(ready.identifiers.count) identifiers from "
+                        + "\(characters) characters (screen read in \(readMs) ms, ready in \(totalMs) ms)")
+                if debug {
+                    Log.info("vocabulary terms: \(ready.terms.joined(separator: ", "))")
+                    Log.info("vocabulary identifiers: \(ready.identifiers.joined(separator: ", "))")
+                }
             }
         }
     }
@@ -340,16 +360,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             if loadTask == nil { loadModel() }
             let loadTask = self.loadTask
             // Whatever vocabulary is ready now; a take never waits for the screen to be read.
-            let plan = vocabularyPlan
-            vocabularyPlan = nil
+            let screen = screenVocabulary
+            screenVocabulary = nil
 
             Task { @MainActor in
                 do {
                     try await loadTask?.value
                     let started = Date()
-                    let transcript = try await transcriber.transcribe(samples, plan: plan)
+                    let transcript = try await transcriber.transcribe(samples, plan: screen?.plan)
                     let raw = transcript.text
-                    let text = self.config.format ? Formatter.format(raw) : raw
+                    var text = self.config.format ? Formatter.format(raw) : raw
+                    if let screen {
+                        text = Vocabulary.snap(text, to: screen.identifiers + screen.terms)
+                    }
                     let elapsed = Self.milliseconds(since: started)
                     if transcript.checkedVocabulary {
                         Log.info("vocabulary: checked the audio, fixed \(transcript.fixes) word(s)")
@@ -620,4 +643,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         try? FileManager.default.removeItem(at: Paths.state)
         NSApp.terminate(nil)
     }
+}
+
+/// What was read from the screen for one take.
+private struct ScreenVocabulary: Sendable {
+    /// Unusual words, checked against the audio when the transcript has a near miss.
+    var terms: [String]
+    /// Keys such as RE-727, matched by their letters and digits.
+    var identifiers: [String]
+    var plan: VocabularyPlan?
 }

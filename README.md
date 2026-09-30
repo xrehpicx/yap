@@ -86,7 +86,9 @@ Parakeet has never heard of your teammates or your stack. When you start talking
 | shadcn | "a PR in the Shaden repo" | a PR in the shadcn repo |
 | FluidAudio | "whether Fluid Audio runs" | whether FluidAudio runs |
 
-Everyday words are never replaced: "refactor" stays "refactor" even with React on screen. Reading the screen happens while you talk, so dictations with nothing to correct are exactly as fast as before; a dictation that does get a correction takes about 150 ms longer. The screen text stays in memory and is never stored or logged.
+Identifiers are matched by their letters and digits: with `RE-727` or `python3` on screen, saying "re seven two seven" or "python three" gives exactly `RE-727` or `python3`, instantly.
+
+Everyday words are only replaced when the audio strongly suggests it: "refactor" stays "refactor" even with React on screen, while "change lock" becomes changelog. Reading the screen happens while you talk, so dictations with nothing to correct are exactly as fast as before; a dictation that does get a correction takes about 150 ms longer. The screen text stays in memory and is never stored or logged.
 
 Words you always want recognised, whatever is on screen: `yap config set vocabulary '["xrehpicx", "Priya"]'`. Turn screen reading off with **Use Screen Context** in the menu bar or `yap config set screenContext false`. The first time it is used, Yap downloads the small model it needs (106 MB).
 
@@ -108,6 +110,8 @@ Parakeet already writes punctuation, capitals and numbers ("$25", "3 o'clock"). 
 | "Dear team, new paragraph, it shipped, new line, thanks, Raj" | Dear team,<br><br>It shipped.<br>Thanks, Raj |
 | "Meet at five, scratch that, meet at six" | Meet at six |
 | "Does it pass question mark" | Does it pass? |
+| "Look at seven two seven, it's a four oh four" | Look at 727, it's a 404 |
+| "The window is one twenty eight k" | The window is 128k |
 
 These are plain text rules, not a language model, so they take about 0.2 ms. Turn them off with **Format Text** in the menu bar or `yap config set format false`.
 
@@ -169,6 +173,7 @@ Stored in `~/.config/yap/config.json`. Change it with `yap config set <key> <val
 | `sendApps` | `[]` | Bundle IDs of apps where Yap presses Return after pasting; `"*"` means every app |
 | `screenContext` | `true` | Listen for unusual words visible on screen (see [Screen context](#screen-context)) |
 | `vocabulary` | `[]` | Words to always listen for, such as names |
+| `debug` | `false` | Also log the words picked from the screen, to see why a word was or was not corrected |
 | `restoreClipboard` | `true` | Put your previous clipboard back after pasting into a text field |
 | `trailingSpace` | `true` | Add a space after pasted text so consecutive dictations do not run together |
 | `sounds` | `true` | Play a sound when recording starts and stops |
@@ -208,6 +213,7 @@ The Accessibility permission is used for four things: noticing the hotkey, seein
 - **Nothing happens when I hold fn.** Run `yap doctor`. Usually Accessibility is not granted yet, or "Press 🌐 key to" is set to something other than Do Nothing.
 - **macOS asks for permissions again after updating.** Grants are tied to the app's code signature. Builds signed with a Developer ID or Apple Development certificate keep them. Ad-hoc builds (no certificate in your keychain) are asked again after every reinstall.
 - **The text went somewhere else.** Open **Recent Dictations** in the menu bar, or run `yap history`.
+- **A word on screen still comes out wrong.** Run `yap config set debug true`, dictate again, and `yap logs` lists the words Yap picked from the screen. If it is there, the transcript was too far from it to be sure; add a replacement for it.
 - **A word keeps coming out wrong.** Add a replacement: `yap config set replacements '{"wrong": "right"}'`.
 - **Something else.** `yap logs` shows what Yap did and how long each step took. Please include it when you [open an issue](https://github.com/xrehpicx/yap/issues).
 
