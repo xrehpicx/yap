@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the CLI
+        run: node --check bin/yap.js && node bin/yap.js --help
+
+      - name: Swift tests
+        run: swift test --package-path native
+
+      - name: Build Yap.app
+        run: npm run build
+
+      - name: Verify the bundle
+        run: |
+          codesign --verify --strict dist/Yap.app
+          dist/Yap.app/Contents/MacOS/yap-helper models
+          dist/Yap.app/Contents/MacOS/yap-helper check-hotkey fn

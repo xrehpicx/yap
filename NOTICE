@@ -1,0 +1,13 @@
+Yap
+Copyright 2026 Raj Sharma
+
+This product is licensed under the Apache License, Version 2.0.
+
+This product includes FluidAudio (https://github.com/FluidInference/FluidAudio),
+Copyright FluidInference, licensed under the Apache License, Version 2.0.
+
+Speech models are not distributed with this product. They are downloaded at runtime
+from Hugging Face and are licensed by their authors under CC-BY-4.0:
+  - NVIDIA Parakeet TDT 0.6B v2 and v3 (https://huggingface.co/nvidia)
+  - Parakeet Ultra by Moondream (https://huggingface.co/moondream/parakeet-ultra)
+  - Core ML conversions by FluidInference (https://huggingface.co/FluidInference)

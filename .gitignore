@@ -1,0 +1,5 @@
+node_modules/
+dist/
+native/.build/
+.DS_Store
+*.tgz
