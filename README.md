@@ -17,7 +17,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/xrehpicx/yap/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/xrehpicx/yap/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
   <img alt="macOS 14+ on Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-lightgrey">
 </p>

@@ -45,7 +45,7 @@ sequenceDiagram
 | --- | --- |
 | `bin/yap.js` | The CLI |
 | `scripts/build-native.mjs` | Builds the Swift package, wraps it in `dist/Yap.app`, and signs it |
-| `scripts/postinstall.mjs` | Builds the app on install when no prebuilt copy is present |
+| `scripts/prepare.mjs` | Builds the app when installing from GitHub or a checkout, unless it is already built |
 | `scripts/make-icon.swift` | Draws the app icon |
 | `native/Sources/yap-helper/App.swift` | Dictation state machine, menu bar menu |
 | `native/Sources/yap-helper/Hotkey.swift` | Hotkey parsing and the event tap |

@@ -40,8 +40,7 @@
   ],
   "scripts": {
     "build": "node scripts/build-native.mjs",
-    "postinstall": "node scripts/postinstall.mjs",
-    "prepack": "node scripts/build-native.mjs",
+    "prepare": "node scripts/prepare.mjs",
     "test": "cd native && swift test"
   },
   "os": [
