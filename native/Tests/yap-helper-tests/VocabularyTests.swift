@@ -129,10 +129,14 @@ final class VocabularyTests: XCTestCase {
         let transcript = String(repeating: "we should ship the new release to production tomorrow morning ", count: 10)
         // The app loads the English word list at startup; do the same before timing.
         Vocabulary.warmUp()
-        let started = Date()
-        _ = Vocabulary.nearMisses(in: transcript, terms: terms)
+        // Best of three, so a busy machine cannot fail the test.
+        let fastest = (0..<3).map { _ in
+            let started = Date()
+            _ = Vocabulary.nearMisses(in: transcript, terms: terms)
+            return Date().timeIntervalSince(started)
+        }.min()!
         // This is the worst case: 100 screen words and a 100-word dictation. The release app
         // takes ~15 ms; debug builds, which the tests use, are roughly ten times slower.
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.25)
+        XCTAssertLessThan(fastest, 0.25)
     }
 }
