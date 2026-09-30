@@ -5,12 +5,17 @@
 // grants to the bundle's code signature, and the microphone prompt needs an Info.plist.
 
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
 const native = path.join(root, 'native')
-const app = path.join(root, 'dist', 'Yap.app')
+const dist = path.join(root, 'dist')
+const target = path.join(dist, 'Yap.app')
+// Assemble and sign in a staging folder, then swap it into place, so anything reading
+// dist/Yap.app (npm packing it, a running copy of Yap) always sees a complete build.
+const staging = path.join(dist, `.staging-${process.pid}`)
+const app = path.join(staging, 'Yap.app')
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 
 const BUNDLE_ID = 'com.yap-dictate.helper'
@@ -24,7 +29,7 @@ if (build.error?.code === 'ENOENT') {
 if (build.status !== 0) process.exit(build.status ?? 1)
 const binDir = execFileSync('swift', [...buildArgs, '--show-bin-path'], { cwd: native, encoding: 'utf8' }).trim()
 
-rmSync(app, { recursive: true, force: true })
+rmSync(staging, { recursive: true, force: true })
 const contents = path.join(app, 'Contents')
 mkdirSync(path.join(contents, 'MacOS'), { recursive: true })
 mkdirSync(path.join(contents, 'Resources'), { recursive: true })
@@ -90,7 +95,13 @@ if (signed.status !== 0 && identity !== '-') {
 }
 if (signed.status !== 0) {
   console.error((signed.stderr ?? '').trim())
+  rmSync(staging, { recursive: true, force: true })
   process.exit(1)
 }
 
-console.log(`Built ${path.relative(root, app)} (signed: ${identity === '-' ? 'ad-hoc' : identity})`)
+const previous = path.join(staging, 'previous')
+if (existsSync(target)) renameSync(target, previous)
+renameSync(app, target)
+rmSync(staging, { recursive: true, force: true })
+
+console.log(`Built ${path.relative(root, target)} (signed: ${identity === '-' ? 'ad-hoc' : identity})`)
