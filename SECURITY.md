@@ -5,10 +5,13 @@
 Yap needs two macOS permissions:
 
 - **Microphone.** Audio is captured only while you hold the hotkey or during a hands-free take. It is transcribed in memory and never written to disk.
-- **Accessibility.** Used for three things:
+- **Accessibility.** Used for four things:
   - Watching for the hotkey with an event tap. Yap only reacts to its hotkey, Space while the hotkey is held, and Esc while recording, and does not record other keys.
   - Asking which element has focus, to decide between pasting and copying.
+  - Reading the text visible in the front window when you start dictating, to pick out names and terms to listen for (screen context). The text is kept in memory for that one dictation and is never written to disk, logged, or sent anywhere. Turn it off with `yap config set screenContext false`.
   - Sending ⌘V, and Return when auto-send is on.
+
+For Electron apps (Slack, VS Code, Discord…), Yap asks the app to build its accessibility tree so its text can be read; this is the same switch screen readers use.
 
 ## What Yap stores
 
@@ -17,7 +20,7 @@ Yap needs two macOS permissions:
 | `~/.config/yap/config.json` | Your settings |
 | `~/Library/Application Support/yap/history.jsonl` | Transcripts, unless `history` is off |
 | `~/Library/Logs/yap/yap.log` | Timings and events, without transcript text |
-| `~/Library/Application Support/FluidAudio/Models/` | Downloaded speech models |
+| `~/Library/Application Support/FluidAudio/Models/` | Downloaded speech models, including the small model used for screen context |
 
 ## Network
 

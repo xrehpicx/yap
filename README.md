@@ -28,6 +28,7 @@
 - **Local.** Speech never leaves your Mac. The only network request is the one-time model download.
 - **Fast.** NVIDIA Parakeet on the Neural Engine turns a 5 second sentence into text in about 45 ms.
 - **Goes where you type.** Pastes into the focused text field, or copies to the clipboard when nothing editable has focus.
+- **Knows your words.** Names and jargon on screen (Supabase, shadcn, your teammates) come out spelled right.
 - **Tidy output.** Filler words and stutters are removed, spoken lists become real lists, and "new line" and "scratch that" work.
 - **Free and open source,** under the Apache 2.0 license.
 
@@ -74,6 +75,20 @@ Yap can press Return after pasting, so dictating into Slack or Claude Code sends
 <p align="center">
   <img src="docs/images/art-auto-send.png" width="880" alt="A dictated reply sent straight into a chat">
 </p>
+
+## Screen context
+
+Parakeet has never heard of your teammates or your stack. When you start talking, Yap reads the words visible in the front window and picks out the unusual ones: names, products, identifiers. If the transcript contains something that looks like a mishearing of one of them, Yap checks it against the audio with a second, small model and corrects it only if the sound agrees.
+
+| On screen | Parakeet heard | You get |
+| --- | --- | --- |
+| Supabase, Vercel | "the superbase and Versal migration" | the Supabase and Vercel migration |
+| shadcn | "a PR in the Shaden repo" | a PR in the shadcn repo |
+| FluidAudio | "whether Fluid Audio runs" | whether FluidAudio runs |
+
+Everyday words are never replaced: "refactor" stays "refactor" even with React on screen. Reading the screen happens while you talk, so dictations with nothing to correct are exactly as fast as before; a dictation that does get a correction takes about 150 ms longer. The screen text stays in memory and is never stored or logged.
+
+Words you always want recognised, whatever is on screen: `yap config set vocabulary '["xrehpicx", "Priya"]'`. Turn screen reading off with **Use Screen Context** in the menu bar or `yap config set screenContext false`. The first time it is used, Yap downloads the small model it needs (106 MB).
 
 ## Formatting
 
@@ -152,6 +167,8 @@ Stored in `~/.config/yap/config.json`. Change it with `yap config set <key> <val
 | `paste` | `auto` | `auto` pastes into text fields and copies otherwise. `always` always pastes. `clipboard` only copies |
 | `format` | `true` | Apply the formatting rules above |
 | `sendApps` | `[]` | Bundle IDs of apps where Yap presses Return after pasting; `"*"` means every app |
+| `screenContext` | `true` | Listen for unusual words visible on screen (see [Screen context](#screen-context)) |
+| `vocabulary` | `[]` | Words to always listen for, such as names |
 | `restoreClipboard` | `true` | Put your previous clipboard back after pasting into a text field |
 | `trailingSpace` | `true` | Add a space after pasted text so consecutive dictations do not run together |
 | `sounds` | `true` | Play a sound when recording starts and stops |
@@ -184,7 +201,7 @@ On the same clips v2 got every technical term right (Redis, Kubernetes, PostgreS
 
 Audio is recorded only while you hold the hotkey (or during a hands-free take). It is transcribed in memory and is never written to disk or sent anywhere. Transcripts stay on your Mac in `history.jsonl`, unless you turn history off. Yap has no analytics and no account.
 
-The Accessibility permission is used for three things: noticing the hotkey, seeing whether a text field has focus, and sending ⌘V and Return. Yap does not log keystrokes. See [SECURITY.md](SECURITY.md).
+The Accessibility permission is used for four things: noticing the hotkey, seeing whether a text field has focus, reading the words on screen for [screen context](#screen-context), and sending ⌘V and Return. Screen text stays in memory for the length of one dictation. Yap does not log keystrokes. See [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 

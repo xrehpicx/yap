@@ -43,7 +43,7 @@ func resolveModel(_ arguments: [String]) -> ModelID {
 
 switch arguments.first {
 case "transcribe":
-    // transcribe <audio-file> [--model id] [--compute ane|gpu] [--runs n] [--raw]
+    // transcribe <audio-file> [--model id] [--compute ane|gpu] [--runs n] [--raw] [--vocab "a,b,c"]
     let rest = Array(arguments.dropFirst())
     guard let path = rest.first, !path.hasPrefix("--") else { fail("usage: transcribe <audio-file>") }
     let model = resolveModel(rest)
@@ -57,12 +57,26 @@ case "transcribe":
         let loadMs = Date().timeIntervalSince(loadStarted) * 1000
 
         let format = !rest.contains("--raw") && Config.load().format
+        let terms = (value(of: "--vocab", in: rest) ?? "").split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty }
+        var plan: VocabularyPlan?
+        var vocabularyMs = 0.0
+        if !terms.isEmpty {
+            try await transcriber.loadVocabularySupport()
+            let started = Date()
+            plan = await transcriber.prepareVocabulary(terms)
+            vocabularyMs = (Date().timeIntervalSince(started) * 10_000).rounded() / 10
+        }
         var raw = ""
         var text = ""
+        var fixes = 0
         var timings: [Double] = []
         for _ in 0..<runs {
             let started = Date()
-            raw = try await transcriber.transcribe(samples)
+            let transcript = try await transcriber.transcribe(samples, plan: plan)
+            raw = transcript.text
+            fixes = transcript.fixes
             text = format ? Formatter.format(raw) : raw
             timings.append((Date().timeIntervalSince(started) * 10_000).rounded() / 10)
         }
@@ -73,6 +87,9 @@ case "transcribe":
             "compute": compute.rawValue,
             "audioSeconds": Double(samples.count) / Recorder.targetSampleRate,
             "loadMs": loadMs.rounded(),
+            "vocabularyTerms": terms.count,
+            "vocabularyFixes": fixes,
+            "vocabularyPrepareMs": vocabularyMs,
             "transcribeMs": timings,
         ])
     }

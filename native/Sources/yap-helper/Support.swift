@@ -59,6 +59,10 @@ struct Config: Codable {
     var history = true
     /// Bundle identifiers of apps where Yap presses Return after pasting; "*" means every app.
     var sendApps: [String] = []
+    /// Read the words on screen and listen for them, so names and jargon come out right.
+    var screenContext = true
+    /// Words to always listen for, in addition to those on screen.
+    var vocabulary: [String] = []
     var replacements: [String: String] = [:]
 
     init() {}
@@ -77,8 +81,12 @@ struct Config: Codable {
         hud = try c.decodeIfPresent(Bool.self, forKey: .hud) ?? hud
         history = try c.decodeIfPresent(Bool.self, forKey: .history) ?? history
         sendApps = try c.decodeIfPresent([String].self, forKey: .sendApps) ?? sendApps
+        screenContext = try c.decodeIfPresent(Bool.self, forKey: .screenContext) ?? screenContext
+        vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? vocabulary
         replacements = try c.decodeIfPresent([String: String].self, forKey: .replacements) ?? replacements
     }
+
+    var usesVocabulary: Bool { screenContext || !vocabulary.isEmpty }
 
     func sendsReturn(in bundleID: String?) -> Bool {
         sendApps.contains("*") || bundleID.map(sendApps.contains) == true

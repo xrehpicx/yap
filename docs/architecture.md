@@ -33,8 +33,9 @@ sequenceDiagram
 2. **Recording.** AVAudioEngine captures the default input device. The engine for the next take is built and prepared ahead of time, which halves the time to start capturing (about 40 ms instead of 100 ms). A prepared engine does not turn the microphone on. When the default input device changes, the prepared engine is rebuilt.
 3. **The tail.** After you release the key, Yap keeps recording for 150 ms, so the end of your last word is not clipped. The Neural Engine slows down after a few idle seconds, so Yap runs a throwaway inference during those 150 ms. The real transcription then runs at full speed.
 4. **Transcription.** FluidAudio runs Parakeet TDT on the Neural Engine. The model stays loaded between takes. Anything up to 15 seconds is a single encoder pass.
-5. **Formatting.** [`Formatter.swift`](../native/Sources/yap-helper/Formatter.swift) applies plain text rules for fillers, stutters, spoken commands and lists. It takes about 0.2 ms.
-6. **Delivery.** [`Inserter.swift`](../native/Sources/yap-helper/Inserter.swift) asks the Accessibility API what has focus:
+5. **Screen context.** When recording starts, a background task reads the visible text of the front window through the Accessibility API, within 120 ms. It keeps words that are not everyday English, using the English vocabulary that ships with macOS, and prepares them for Parakeet CTC 110M. When you release the key, the CTC model starts on the audio at low priority, alongside transcription. Yap waits for it only if the transcript has a near miss: an unusual word within a small edit distance of a screen word, or the same letters spaced differently. The suggested replacements must pass the same rules, so everyday words are never changed. [`ScreenContext.swift`](../native/Sources/yap-helper/ScreenContext.swift) and [`Vocabulary.swift`](../native/Sources/yap-helper/Vocabulary.swift) have the details.
+6. **Formatting.** [`Formatter.swift`](../native/Sources/yap-helper/Formatter.swift) applies plain text rules for fillers, stutters, spoken commands and lists. It takes about 0.2 ms.
+7. **Delivery.** [`Inserter.swift`](../native/Sources/yap-helper/Inserter.swift) asks the Accessibility API what has focus:
    - A text field gets the text pasted with ⌘V, then your old clipboard is put back.
    - Something that is not a text field gets the text copied to the clipboard.
    - An app that does not say gets the text pasted and also left on the clipboard.
@@ -54,6 +55,8 @@ sequenceDiagram
 | `native/Sources/yap-helper/Recorder.swift` | Microphone capture |
 | `native/Sources/yap-helper/Transcriber.swift` | Model loading and transcription |
 | `native/Sources/yap-helper/Formatter.swift` | Text formatting rules |
+| `native/Sources/yap-helper/ScreenContext.swift` | Reads the text visible in the front window |
+| `native/Sources/yap-helper/Vocabulary.swift` | Picks unusual words and spots near misses |
 | `native/Sources/yap-helper/Inserter.swift` | Focus detection, paste, clipboard |
 | `native/Sources/yap-helper/HUD.swift` | The pill |
 | `native/Sources/yap-helper/Icons.swift` | Menu bar glyphs |

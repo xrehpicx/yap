@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private var hotkeyDownAt = Date.distantPast
     private var isCleanTap = false
     private var handsFreeLimitWork: DispatchWorkItem?
+    /// Counts takes, so a vocabulary prepared for an old take is not used for a new one.
+    private var take = 0
+    private var vocabularyPlan: VocabularyPlan?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("yap-helper starting (pid \(state.pid))")
@@ -106,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                 self.state.modelReady = true
                 self.state.phase = "ready"
                 self.state.error = self.configError
+                self.loadVocabularySupport()
             } catch {
                 Log.info("model load failed: \(error.localizedDescription)")
                 self.state.phase = "model failed to load"
@@ -113,6 +117,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                 self.loadTask = nil
             }
             self.refresh()
+        }
+    }
+
+    /// The small model that checks screen words against the audio. Loaded after the main model,
+    /// so it never delays being ready to dictate.
+    private func loadVocabularySupport() {
+        guard config.usesVocabulary else { return }
+        let transcriber = self.transcriber!
+        // Not .utility: macOS throttles Core ML's model compiler at that priority (31 s instead of ~0.5 s).
+        Task.detached(priority: .userInitiated) {
+            Vocabulary.warmUp()
+            let started = Date()
+            do {
+                try await transcriber.loadVocabularySupport()
+                Log.info("vocabulary model ready in \(Self.milliseconds(since: started)) ms")
+            } catch {
+                Log.info("vocabulary model failed to load: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reads the screen and prepares its words while the user talks, off the main thread.
+    private func prepareVocabulary() {
+        take += 1
+        vocabularyPlan = nil
+        guard config.usesVocabulary else { return }
+        let thisTake = take
+        let (readScreen, always) = (config.screenContext, config.vocabulary)
+        let transcriber = self.transcriber!
+        Task.detached(priority: .userInitiated) {
+            guard await transcriber.supportsVocabulary else { return }
+            let started = Date()
+            let texts = readScreen ? ScreenContext.visibleText() : []
+            let terms = Vocabulary.terms(in: texts, always: always)
+            let readMs = Self.milliseconds(since: started)
+            let plan = await transcriber.prepareVocabulary(terms)
+            let totalMs = Self.milliseconds(since: started)
+            await MainActor.run {
+                guard self.take == thisTake else { return }
+                self.vocabularyPlan = plan
+                Log.info("vocabulary: \(plan?.terms.count ?? 0) terms (screen read in \(readMs) ms, ready in \(totalMs) ms)")
+            }
         }
     }
 
@@ -267,6 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         playSound("Tink")
         if config.hud { hud.show(.listening(handsFree: handsFree)) }
         refresh()
+        prepareVocabulary()
     }
 
     private func cancelRecording() {
@@ -292,14 +339,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             let audioSeconds = Double(samples.count) / Recorder.targetSampleRate
             if loadTask == nil { loadModel() }
             let loadTask = self.loadTask
+            // Whatever vocabulary is ready now; a take never waits for the screen to be read.
+            let plan = vocabularyPlan
+            vocabularyPlan = nil
 
             Task { @MainActor in
                 do {
                     try await loadTask?.value
                     let started = Date()
-                    let raw = try await transcriber.transcribe(samples)
+                    let transcript = try await transcriber.transcribe(samples, plan: plan)
+                    let raw = transcript.text
                     let text = self.config.format ? Formatter.format(raw) : raw
                     let elapsed = Self.milliseconds(since: started)
+                    if transcript.checkedVocabulary {
+                        Log.info("vocabulary: checked the audio, fixed \(transcript.fixes) word(s)")
+                    }
                     self.deliver(text, raw: raw, audioSeconds: audioSeconds, transcribeMs: elapsed)
                 } catch {
                     Log.info("transcription failed: \(error.localizedDescription)")
@@ -434,6 +488,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         format.toolTip = "Remove filler words, handle “new line” and “scratch that”, and turn spoken lists into numbered lists"
         menu.addItem(format)
         menu.addItem(autoSendItem())
+        let context = menuItem("Use Screen Context", symbol: "text.viewfinder", action: #selector(toggleScreenContext))
+        context.state = config.screenContext ? .on : .off
+        context.toolTip = "Listen for names and terms visible on screen, so they come out spelled right"
+        menu.addItem(context)
         let sounds = menuItem("Sounds", symbol: "speaker.wave.2", action: #selector(toggleSounds))
         sounds.state = config.sounds ? .on : .off
         menu.addItem(sounds)
@@ -525,6 +583,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         }
         Config.persist("sendApps", config.sendApps)
         Log.info("auto-send in every app \(config.sendApps.contains("*") ? "on" : "off")")
+    }
+
+    @objc private func toggleScreenContext() {
+        config.screenContext.toggle()
+        Config.persist("screenContext", config.screenContext)
+        loadVocabularySupport()
     }
 
     @objc private func toggleSounds() {

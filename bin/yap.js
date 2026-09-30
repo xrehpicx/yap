@@ -31,6 +31,8 @@ const DEFAULTS = {
   hud: true,
   history: true,
   sendApps: [],
+  screenContext: true,
+  vocabulary: [],
   replacements: {},
 }
 const CHOICES = {
