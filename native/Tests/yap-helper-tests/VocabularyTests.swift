@@ -136,7 +136,8 @@ final class VocabularyTests: XCTestCase {
             return Date().timeIntervalSince(started)
         }.min()!
         // This is the worst case: 100 screen words and a 100-word dictation. The release app
-        // takes ~15 ms; debug builds, which the tests use, are roughly ten times slower.
-        XCTAssertLessThan(fastest, 0.25)
+        // takes ~15 ms; debug builds, which the tests use, take ~120 ms on an M4 Max and over
+        // 250 ms on a busy machine. The bound catches a change in kind, not a slow machine.
+        XCTAssertLessThan(fastest, 1.0)
     }
 }
