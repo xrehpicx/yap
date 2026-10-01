@@ -125,6 +125,7 @@ final class HotkeyMonitor {
     var onSpaceWhileHeld: (() -> Bool)?
 
     private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
     private var isDown = false
     private var swallowSpaceUp = false
 
@@ -154,7 +155,20 @@ final class HotkeyMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
+        self.source = source
         return true
+    }
+
+    /// Removes the event tap, so keys reach other apps without passing through Yap at all.
+    func stop() {
+        guard let tap else { return }
+        CGEvent.tapEnable(tap: tap, enable: false)
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        CFMachPortInvalidate(tap)
+        self.tap = nil
+        source = nil
+        isDown = false
+        swallowSpaceUp = false
     }
 
     /// Returns true when the event should be swallowed.

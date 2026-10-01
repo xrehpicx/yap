@@ -48,6 +48,8 @@ struct Config: Codable {
     enum Paste: String, Codable { case auto, always, clipboard }
 
     var hotkey = "fn"
+    /// Off from the menu bar switch or `yap off`: no hotkey, no screen reading, microphone released.
+    var paused = false
     var mode = Mode.hold
     var model = ModelID.v2.rawValue
     var paste = Paste.auto
@@ -73,6 +75,7 @@ struct Config: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? hotkey
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? paused
         mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? mode
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? model
         paste = try c.decodeIfPresent(Paste.self, forKey: .paste) ?? paste
@@ -125,6 +128,7 @@ struct DaemonState: Codable {
     var modelReady = false
     var hotkey = ""
     var hotkeyActive = false
+    var paused = false
     var accessibility = false
     var microphone = "unknown"
     var error: String?

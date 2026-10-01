@@ -121,10 +121,10 @@ These are plain text rules, not a language model, so they take about 0.2 ms. Tur
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-dark.png">
-  <img src="docs/images/menubar-light.png" width="240" alt="Menu bar icons: ready, listening, transcribing, needs attention">
+  <img src="docs/images/menubar-light.png" width="300" alt="Menu bar icons: ready, listening, transcribing, needs attention, off">
 </picture>
 
-Ready, listening, transcribing, and needs attention (a permission is missing). The menu shows the status, recent dictations, and switches for formatting, auto-send and sounds.
+Ready, listening, transcribing, needs attention (a permission is missing), and off. The switch at the top of the menu turns Yap off without quitting: the hotkey goes back to macOS, nothing reads the screen, and the microphone is released. The model stays loaded, so turning it back on is instant. Below the switch are the status, recent dictations, and switches for formatting, auto-send and sounds.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pill-states-dark.png">
@@ -139,6 +139,7 @@ The pill follows your system appearance: ink on paper in light mode, paper on in
 | --- | --- |
 | `yap start` / `stop` / `restart` | Control the background app |
 | `yap status` | Show state and permissions |
+| `yap on` / `off` | Switch Yap on or off without quitting, like the menu's switch |
 | `yap doctor` | Check the whole setup and say what to fix |
 | `yap install` / `uninstall` | Start at login, or stop doing so |
 | `yap hotkey [keys]` | Show or set the hotkey |

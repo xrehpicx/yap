@@ -31,7 +31,7 @@ final class Recorder {
             [weak self] _, _ in
             guard let self else { return }
             self.discardPrepared()
-            self.prepare()
+            if self.keepsPrepared { self.prepare() }
         }
     }
 
@@ -44,10 +44,16 @@ final class Recorder {
 
     var isRecording: Bool { engine != nil }
 
+    /// Whether to keep the next take's engine ready. Off while Yap is switched off, so it holds
+    /// nothing of the audio system.
+    var keepsPrepared = true {
+        didSet { if !keepsPrepared { discardPrepared() } }
+    }
+
     /// Gets the next take's engine ready. Call from the main thread when nothing is waiting on it:
     /// building an engine takes a few tens of milliseconds.
     func prepare() {
-        guard engine == nil, prepared == nil else { return }
+        guard keepsPrepared, engine == nil, prepared == nil else { return }
         do {
             prepared = try makeEngine()
         } catch {

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- An on/off switch at the top of the menu turns Yap off without quitting: the hotkey goes back to macOS, the screen is not read, and the microphone is released. The model stays loaded, so switching back on is instant. Also `yap on` and `yap off`; `yap status` and `yap doctor` show it. The setting survives restarts.
+- The menu's status line lines up with the items below it.
+
 ## 0.1.0
 
 First release.

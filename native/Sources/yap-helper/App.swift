@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     /// Counts takes, so a vocabulary prepared for an old take is not used for a new one.
     private var take = 0
     private var screenVocabulary: ScreenVocabulary?
+    private weak var statusMenuItem: NSMenuItem?
+    private weak var hintMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("yap-helper starting (pid \(state.pid))")
@@ -79,6 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         menu.autoenablesItems = false
         menu.delegate = self
         statusItem.menu = menu
+        state.paused = config.paused
+        recorder.keepsPrepared = !config.paused
         loadModel()
         requestMicrophone()
         startHotkey()
@@ -87,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
         ) { [weak self] notification in
-            guard self?.config.screenContext == true,
+            guard self?.config.screenContext == true, self?.config.paused == false,
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             else { return }
             DispatchQueue.global(qos: .utility).async { ScreenContext.warmUp(app) }
@@ -206,16 +210,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private func startHotkey() {
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         state.accessibility = AXIsProcessTrustedWithOptions(prompt)
-        state.hotkeyActive = state.accessibility && hotkey.start()
-        guard !state.hotkeyActive else { return }
+        // Switched off, Yap installs no event tap at all; switching on starts it.
+        if state.accessibility, config.paused || hotkey.start() {
+            state.hotkeyActive = !config.paused
+            return
+        }
 
         Log.info("waiting for the Accessibility permission")
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] timer in
-            guard let self, AXIsProcessTrusted(), self.hotkey.start() else { return }
+            guard let self, AXIsProcessTrusted(), self.config.paused || self.hotkey.start() else { return }
             timer.invalidate()
-            Log.info("Accessibility granted; hotkey \(self.state.hotkey) is active")
+            Log.info("Accessibility granted; " + (self.config.paused ? "Yap is off" : "hotkey \(self.state.hotkey) is active"))
             self.state.accessibility = true
-            self.state.hotkeyActive = true
+            self.state.hotkeyActive = !self.config.paused
             self.refresh()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -233,6 +240,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             source.resume()
             signalSources.append(source)
         }
+        // `yap off` and `yap on`.
+        for (number, paused) in [(SIGUSR1, true), (SIGUSR2, false)] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { [weak self] in self?.setPaused(paused) }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    // MARK: - On/off
+
+    /// The menu's switch, `yap off` and `yap on`. Off removes the event tap, so the hotkey goes
+    /// back to macOS, and stops reading the screen and holding the microphone engine. The model
+    /// stays loaded, so switching back on is instant.
+    private func setPaused(_ paused: Bool) {
+        guard paused != config.paused else { return }
+        config.paused = paused
+        Config.persist("paused", paused)
+        state.paused = paused
+        if paused {
+            if case .recording = phase { cancelRecording() }
+            hotkey.stop()
+            state.hotkeyActive = false
+            recorder.keepsPrepared = false
+        } else {
+            recorder.keepsPrepared = true
+            if state.microphone == "granted" { recorder.prepare() }
+            state.accessibility = AXIsProcessTrusted()
+            state.hotkeyActive = state.accessibility && hotkey.start()
+        }
+        Log.info("switched \(paused ? "off" : "on")")
+        refresh()
+        updateStatusItems()
     }
 
     // MARK: - Hotkey
@@ -456,7 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         switch phase {
         case .recording: icon = .recording
         case .transcribing: icon = .transcribing
-        case .idle: icon = isReady ? .idle : .attention
+        case .idle: icon = config.paused ? .off : isReady ? .idle : .attention
         }
         statusItem.button?.image = MenuBarIcon.image(for: icon)
     }
@@ -467,6 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         case .transcribing: return ("Transcribing…", .systemBlue)
         case .idle: break
         }
+        if config.paused { return ("Off", .systemGray) }
         if state.error != nil && !state.modelReady { return ("Model failed to load", .systemRed) }
         if !state.modelReady { return (state.phase.prefix(1).uppercased() + state.phase.dropFirst(), .systemOrange) }
         if !state.accessibility { return ("Needs Accessibility access", .systemOrange) }
@@ -477,21 +519,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let (title, color) = statusLine()
-        let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        status.image = StatusDot.image(color)
-        let key = hotkey.spec.displayName
-        let model = ModelID(rawValue: state.model)?.displayName ?? state.model
-        let hint =
-            config.mode == .hold && hotkey.spec.isModifierOnly
-            ? "Hold \(key) to dictate, add Space for hands-free · \(model)"
-            : "\(config.mode == .hold ? "Hold" : "Press") \(key) to dictate · \(model)"
-        menu.addItem(status)
-        if #available(macOS 14.4, *) {
-            status.subtitle = hint
-        } else {
-            menu.addItem(NSMenuItem(title: hint, action: nil, keyEquivalent: ""))
+        let toggle = NSMenuItem()
+        toggle.view = MenuSwitchRow(title: "Yap", isOn: !config.paused) { [weak self] isOn in
+            self?.setPaused(!isOn)
         }
+        menu.addItem(toggle)
+
+        let status = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        menu.addItem(status)
+        statusMenuItem = status
+        if #available(macOS 14.4, *) {
+            hintMenuItem = nil
+        } else {
+            let hint = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            menu.addItem(hint)
+            hintMenuItem = hint
+        }
+        updateStatusItems()
         menu.addItem(.separator())
 
         let recent = History.recent(5)
@@ -533,6 +577,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         let quit = menuItem("Quit Yap", symbol: "power", action: #selector(quit))
         quit.keyEquivalent = "q"
         menu.addItem(quit)
+    }
+
+    /// Fills in the status line, also while the menu is open (the switch changes it in place).
+    private func updateStatusItems() {
+        guard let status = statusMenuItem else { return }
+        let (title, color) = statusLine()
+        status.title = title
+        // The dot goes where checkmarks go, so the status lines up with the items below it.
+        status.state = .on
+        status.onStateImage = StatusDot.image(color)
+        let key = hotkey.spec.displayName
+        let model = ModelID(rawValue: state.model)?.displayName ?? state.model
+        // One line, so the dot stays level with the status.
+        let hint =
+            config.paused
+            ? "\(key) works as usual until Yap is back on"
+            : config.mode == .hold && hotkey.spec.isModifierOnly
+                ? "Hold \(key) to dictate · Space for hands-free"
+                : "\(config.mode == .hold ? "Hold" : "Press") \(key) to dictate"
+        status.toolTip = "Model: \(model)"
+        if #available(macOS 14.4, *) {
+            status.subtitle = hint
+        } else {
+            hintMenuItem?.title = hint
+        }
     }
 
     private func menuItem(_ title: String, symbol: String? = nil, action: Selector? = nil) -> NSMenuItem {
@@ -657,4 +726,40 @@ private struct ScreenVocabulary: Sendable {
     /// Every short phrase on screen by sound, so "Yeah, plugs" can become "yap logs".
     var phrases: Vocabulary.PhraseIndex
     var plan: VocabularyPlan?
+}
+
+/// A menu row with a title and a switch, like the Wi-Fi and Bluetooth menus. Flipping it leaves
+/// the menu open, so the status line below can be seen changing.
+final class MenuSwitchRow: NSView {
+    private let toggle = NSSwitch()
+    private let onChange: (Bool) -> Void
+
+    init(title: String, isOn: Bool, onChange: @escaping (Bool) -> Void) {
+        self.onChange = onChange
+        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: 30))
+        autoresizingMask = [.width]
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        toggle.controlSize = .small
+        toggle.state = isOn ? .on : .off
+        toggle.target = self
+        toggle.action = #selector(changed)
+        toggle.setAccessibilityLabel(title)
+        for view in [label, toggle] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            toggle.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 12),
+            // Lines up with the key equivalents and submenu arrows below.
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    @objc private func changed() { onChange(toggle.state == .on) }
 }

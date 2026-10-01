@@ -65,7 +65,7 @@ final class DocsImagesTests: XCTestCase {
     }
 
     func testMenuBarGlyphs() throws {
-        let states: [MenuBarIcon.State] = [.idle, .recording, .transcribing, .attention]
+        let states: [MenuBarIcon.State] = [.idle, .recording, .transcribing, .attention, .off]
         let scale: CGFloat = 4
         let cell: CGFloat = 30
         for (name, background, ink) in [("light", NSColor(white: 0.96, alpha: 1), NSColor.black),

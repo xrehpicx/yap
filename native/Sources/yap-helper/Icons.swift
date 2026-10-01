@@ -2,11 +2,12 @@ import AppKit
 
 /// Menu bar glyphs, drawn in code so they stay crisp at every scale and tint with the menu bar.
 /// Every state is "something flowing into a text cursor", like the HUD: sound bars at rest,
-/// the same bars punched out of a solid tile while listening, dots while transcribing, and the
-/// caret turned into an exclamation mark when something needs fixing.
+/// the same bars punched out of a solid tile while listening, dots while transcribing, the
+/// caret turned into an exclamation mark when something needs fixing, and the resting glyph
+/// dimmed, like any inactive menu bar item, while Yap is switched off.
 enum MenuBarIcon {
     enum State {
-        case idle, recording, transcribing, attention
+        case idle, recording, transcribing, attention, off
     }
 
     static func image(for state: State) -> NSImage {
@@ -43,6 +44,7 @@ enum MenuBarIcon {
         }
 
         context.setFillColor(NSColor.black.cgColor)
+        if state == .off { context.setAlpha(0.4) }
         if state == .recording {
             let tile = CGRect(x: 0.5, y: 0.5, width: 17, height: 17)
             context.addPath(CGPath(roundedRect: tile, cornerWidth: 4, cornerHeight: 4, transform: nil))

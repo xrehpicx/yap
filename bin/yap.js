@@ -21,6 +21,7 @@ const agentPath = path.join(homedir(), 'Library', 'LaunchAgents', `${BUNDLE_ID}.
 
 const DEFAULTS = {
   hotkey: 'fn',
+  paused: false,
   mode: 'hold',
   model: 'parakeet-v2',
   paste: 'auto',
@@ -49,6 +50,7 @@ Usage: yap <command>
   stop                     Stop it
   restart                  Restart it (picks up config changes)
   status                   Show whether it is running and which permissions it has
+  on | off                 Switch dictation on or off without quitting (the menu bar switch)
   doctor                   Check the whole setup and say what to fix
   install                  Start automatically at login
   uninstall                Stop starting at login
@@ -198,14 +200,17 @@ function printStatus() {
   const state = readJSON(statePath, {})
   const config = { ...DEFAULTS, ...readConfig() }
   const rows = [
-    ['Status', `${state.phase ?? 'starting'} (pid ${pids[0]})`],
-    ['Hotkey', `${config.mode === 'hold' ? 'hold' : 'press'} ${state.hotkey ?? config.hotkey}`],
+    ['Status', `${state.paused ? 'off' : (state.phase ?? 'starting')} (pid ${pids[0]})`],
+    ['Hotkey', `${config.mode === 'hold' ? 'hold' : 'press'} ${state.hotkey ?? config.hotkey}${state.paused ? ' (off)' : ''}`],
     ['Model', `${state.model ?? config.model}${state.modelReady ? '' : ' (not ready yet)'}`],
     ['Accessibility', state.accessibility ? 'granted' : 'NOT granted'],
     ['Microphone', state.microphone ?? 'unknown'],
   ]
   for (const [label, value] of rows) console.log(`${label.padEnd(14)} ${value}`)
 
+  if (state.paused) {
+    console.log('\nYap is switched off, so the hotkey works as usual. Switch it on from the menu bar or with `yap on`.')
+  }
   const settings = 'System Settings → Privacy & Security'
   if (!state.accessibility) {
     console.log(`\nThe hotkey and pasting need Accessibility. Enable "Yap" under ${settings} → Accessibility.`)
@@ -215,6 +220,22 @@ function printStatus() {
   }
   if (state.error) console.log(`\nLast error: ${state.error}`)
   return true
+}
+
+/** `yap on` and `yap off`: the same switch as the menu bar's, without quitting Yap. */
+async function setSwitch(on) {
+  const pids = daemonPids()
+  if (pids.length === 0) {
+    const config = readConfig()
+    if (on) delete config.paused
+    else config.paused = true
+    writeConfig(config)
+    console.log(`Yap is not running. It will start switched ${on ? 'on' : 'off'}; run \`yap start\`.`)
+    return
+  }
+  process.kill(pids[0], on ? 'SIGUSR2' : 'SIGUSR1')
+  await waitFor(() => readJSON(statePath, {}).paused === !on, 2000)
+  printStatus()
 }
 
 function run() {
@@ -448,7 +469,10 @@ function doctor() {
   const settings = 'System Settings → Privacy & Security'
   if (running) {
     check(state.accessibility === true, 'Accessibility permission', `Enable "Yap" under ${settings} → Accessibility`)
-    check(state.hotkeyActive === true, `Hotkey "${state.hotkey}" is active`, 'Needs the Accessibility permission')
+    check(state.paused !== true, 'Yap is switched on', 'Switch it on from the menu bar or with `yap on`')
+    if (state.paused !== true) {
+      check(state.hotkeyActive === true, `Hotkey "${state.hotkey}" is active`, 'Needs the Accessibility permission')
+    }
     check(state.microphone === 'granted', 'Microphone permission', `Enable "Yap" under ${settings} → Microphone`)
     check(state.modelReady === true, `Model ${state.model} is loaded`, `Currently: ${state.phase}. See \`yap logs\``)
   }
@@ -486,6 +510,10 @@ switch (command) {
     break
   case 'status':
     process.exit(printStatus() ? 0 : 1)
+    break
+  case 'on':
+  case 'off':
+    await setSwitch(command === 'on')
     break
   case 'run':
     run()
